@@ -1,0 +1,399 @@
+openapi: 3.0.3
+info:
+  title: TryHouse API
+  description: Агрегатор регулярных платежей. Единое окно для управления и оплаты регулярных начислений (ЖКУ, интернет, парковка, налоги).
+  version: 1.0.0
+servers:
+  - url: https://api.tryhouse.ru/v1
+    description: Production API сервер
+
+security:
+  - JWT: []
+
+components:
+  securitySchemes:
+    JWT:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+          format: uuid
+        provider_id:
+          type: string
+          format: uuid
+        bank_id:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          format: float
+          minimum: 0.01
+        currency:
+          type: string
+          enum: [RUB, USD, EUR]
+        status:
+          type: string
+          enum: [pending, completed, failed, refunded]
+        due_date:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      required:
+        - user_id
+        - provider_id
+        - bank_id
+        - amount
+        - currency
+        - status
+        - due_date
+
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        payment_id:
+          type: string
+          format: uuid
+        bank_transaction_id:
+          type: string
+        status:
+          type: string
+          enum: [pending, completed, failed, refunded]
+        amount:
+          type: number
+          format: float
+        fee:
+          type: number
+          format: float
+        timestamp:
+          type: string
+          format: date-time
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        phone:
+          type: string
+
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+
+    PaymentListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payment'
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+
+    TransactionListResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Transaction'
+        pagination:
+          type: object
+
+    NotificationSubscribeRequest:
+      type: object
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        type:
+          type: string
+          enum: [SMS, email, push]
+      required:
+        - user_id
+
+paths:
+  /payments:
+    post:
+      summary |> Создать регулярный платёж.
+      requestBody:
+        required |> true.
+        content:
+          application/json:
+            schema |> $ref : '#/components/schemas/Payment'.
+      responses |> 
+         '201':
+           description |> Платёж создан.
+           content |> application/json : { schema : $ref : '#/components/schemas/Payment' }.
+         '400':
+           description |> Ошибка валидации.
+           content |> application/json : { schema : $ref : '#/components/schemas/Error' }.
+         '401':
+           description |> Неавторизован.
+           content |> application/json : { schema : $ref : '#/components/schemas/Error' }.
+    get |>
+       summary |> Получить список платежей пользователя.
+       parameters |>
+         - name |> page.
+           in |> query.
+           description |> Номер страницы.
+           required |> false.
+           schema |> type : integer, default : 1.
+         - name |> limit.
+           in |> query.
+           description |> Лимит на странице.
+           required |> false.
+           schema |> type : integer, default : 20.
+         - name |> status.
+           in |> query.
+           description |> Фильтр по статусу.
+           required |> false.
+           schema |> type : string, enum : [pending, completed, failed, refunded].
+         - name |> from_date.
+           in |> query.
+           description |> Фильтр с даты (YYYY-MM-DD).
+           required |> false.
+           schema |> type : string, format : date.
+         - name |> to_date.
+           in |> query.
+           description |> Фильтр по дату (YYYY-MM-DD).
+           required |> false.
+           schema |> type : string, format : date.
+       responses |
+         '200':
+           description |> Список платежей.
+           content |
+             application/json :
+               schema |
+                 $ref : '#/components/schemas/PaymentListResponse'.
+         '401':
+           description |
+             Неавторизован.
+             content |
+               application/json :
+                 schema |
+                   $ref : '#/components/schemas/Error'.
+  
+  /payments/{id} :
+    get |
+       summary |
+         Получить детали платежа по ID.
+       parameters |
+         - name |
+            id.
+            in |
+              path.
+            required |
+              true.
+            schema |
+              type :
+                string,
+              format :
+                uuid.
+       responses |
+         '200':
+           description |
+             Детали платежа.
+             content |
+               application/json :
+                 schema |
+                   $ref : '#/components/schemas/Payment'.
+         '404':
+           description |
+             Платёж не найден.
+             content |
+               application/json :
+                 schema |
+                   $ref : '#/components/schemas/Error'.
+         '401':
+           description |
+             Неавторизован.
+             content |
+               application/json :
+                 schema |
+                   $ref : '#/components/schemas/Error'.
+  
+  /payments/{id}/cancel :
+    post |
+       summary |
+         Отменить регулярный платёж.
+       parameters |
+         - name |
+            id.
+            in |
+              path.
+            required |
+              true.
+            schema |
+              type :
+                string,
+              format :
+                uuid.
+       responses |
+         '200':
+           description |
+             Платёж отменён (статус refunded).
+             content |
+               application/json :
+                 schema |
+                   $ref : '#/components/schemas/Payment'.
+         '404':
+           description |
+             Платёж не найден.
+             content |
+               application/json :
+                 schema |
+                   $ref : '#/components/schemas/Error'.
+         '409':
+           description |
+             Невозможно отменить завершённый платёж.
+             content |
+               application/json :
+                 schema |
+                   $ref : '#/components/schemas/Error'.
+  
+  /transactions :
+    get |
+       summary |
+         Получить историю транзакций пользователя.
+       parameters |
+         - name |
+            page.
+            in |
+              query.
+            description |
+              Номер страницы.
+            required |
+              false.
+            schema |
+              type :
+                integer,
+              default :
+                1.
+         - name |
+            limit.
+            in |
+              query.
+            description |
+              Лимит на странице.
+            required |
+              false.
+            schema |
+              type :
+                integer,
+              default :
+                20.
+       responses|
+         '200':
+           description|
+             История транзакций с пагинацией.
+             content|
+               application/json|
+                 schema|
+                   $ref:'#/components/schemas/TransactionListResponse'.
+         '401'|
+           description|
+             Неавторизован.|
+             content|
+               application/json|
+                 schema|
+                   $ref:'#/components/schemas/Error'.
+  
+  /notifications/subscribe :
+    post|
+       summary|
+         Подписаться на уведомления (SMS, email, push).
+       requestBody|
+         required|
+           true.|
+         content|
+           application/json|
+             schema|
+               $ref:'#/components/schemas/NotificationSubscribeRequest'.
+       responses|
+         '201'|
+           description|
+             Подписка создана.|
+             content|
+               application/json|
+                 schema|
+                   type|
+                     object,
+                   properties|
+                     message|
+                       type|
+                         string.|
+                     subscription_id|
+                       type|
+                         string,
+                       format|
+                         uuid.|
+                     user_id|
+                       type|
+                         string,
+                       format|
+                         uuid.|
+                     type|
+                       type|
+                         string,
+                       enum|
+                         [SMS, email, push].|
+                     created_at|
+                       type|
+                         string,
+                       format|
+                         date-time.|
+                     status|
+                       type|
+                         string,
+                       enum|
+                         [active].|
+                   required|
+                     - subscription_id,
+                     - user_id,
+                     - type,
+                     - created_at,
+                     - status.|
+         '400'|
+           description|
+             Ошибка валидации.|
+             content|
+               application/json|
+                 schema|
+                   $ref:'#/components/schemas/Error'.
