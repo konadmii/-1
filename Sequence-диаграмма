@@ -1,0 +1,47 @@
+sequenceDiagram
+    participant User
+    participant TryHouseAPI
+    participant BankAPI
+    participant ServiceProviderAPI
+    participant NotificationService
+    participant Database
+
+    autonumber
+
+    User ->> TryHouseAPI: 1. Запуск автоплатежа (регулярный платёж)
+    TryHouseAPI ->> Database: 2. Проверить статус транзакции и лимит
+    Database -->> TryHouseAPI: 3. Статус: "ожидает", лимит OK
+
+    alt Есть ли средства?
+        TryHouseAPI ->> BankAPI: 4. Запрос на списание средств (RUB/USD/EUR, комиссия)
+        BankAPI -->> TryHouseAPI: 5. Ответ: "Успех" или "Ошибка"
+        loop Ретрай при ошибке (до 3 раз)
+            BankAPI -->> TryHouseAPI: 6. Ошибка (например, таймаут >2 сек)
+            delay 1s
+            TryHouseAPI ->> BankAPI: 7. Повторный запрос на списание
+        end
+        alt Средств недостаточно?
+            BankAPI -->> TryHouseAPI: 8. Ответ: "Недостаточно средств"
+            TryHouseAPI ->> NotificationService: 9. Отправить уведомление пользователю
+            NotificationService -->> User: 10. Уведомление (SMS/email)
+            TryHouseAPI ->> Database: 11. Обновить статус транзакции: "отказано (недостаточно средств)"
+        else Средства есть
+            BankAPI -->> TryHouseAPI: 12. Ответ: "Списание выполнено"
+        end
+    else Нет активных платежей
+        TryHouseAPI ->> Database: 13. Обновить статус: "нет активных платежей"
+    end
+
+    TryHouseAPI ->> ServiceProviderAPI: 14. Подтвердить оплату поставщику
+    ServiceProviderAPI -->> TryHouseAPI: 15. Подтверждение/ошибка
+    alt Ошибка подтверждения?
+        TryHouseAPI ->> NotificationService: 16. Отправить уведомление о проблеме
+        NotificationService -->> User: 17. Уведомление о проблеме
+        TryHouseAPI ->> Database: 18. Обновить статус: "ошибка подтверждения"
+    else Подтверждение успешно
+        TryHouseAPI ->> NotificationService: 19. Отправить уведомление об успешной оплате
+        NotificationService -->> User: 20. Уведомление об успехе
+        TryHouseAPI ->> Database: 21. Обновить статус транзакции: "успешно"
+    end
+
+    Database -->> TryHouseAPI: 22. Сохранение истории, комиссии, валюты, суммы
