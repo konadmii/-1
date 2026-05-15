@@ -1,0 +1,55 @@
+erDiagram
+    User {
+        id PK
+        name string NOT NULL
+        email string UNIQUE NOT NULL
+        phone string UNIQUE NOT NULL
+        bank_account_id string NOT NULL
+    }
+
+    Bank {
+        id PK
+        name string NOT NULL
+        api_endpoint string NOT NULL
+        commission_type ENUM("fixed", "percentage") NOT NULL
+        commission_value decimal(10,2) NOT NULL
+    }
+
+    ServiceProvider {
+        id PK
+        name string NOT NULL
+        category ENUM("ЖКУ", "интернет", "налоги") NOT NULL
+        api_endpoint string NOT NULL
+    }
+
+    Payment {
+        id PK
+        user_id FK <|--|{ User : 1:N
+        provider_id FK <|--|{ ServiceProvider : 1:N
+        bank_id FK <|--|{ Bank : 1:N
+        amount decimal(12,2) NOT NULL
+        currency ENUM("RUB", "USD", "EUR") NOT NULL
+        status ENUM("pending", "completed", "failed", "refunded") NOT NULL DEFAULT "pending"
+        due_date timestamp NOT NULL
+        created_at timestamp DEFAULT now()
+        updated_at timestamp DEFAULT now()
+    }
+
+    Transaction {
+        id PK
+        payment_id FK <|--|{ Payment : 1:N
+        bank_transaction_id string UNIQUE NOT NULL
+        status ENUM("pending", "completed", "failed", "refunded") NOT NULL DEFAULT "pending"
+        amount decimal(12,2) NOT NULL
+        fee decimal(10,2) NOT NULL
+        timestamp timestamp DEFAULT now()
+    }
+
+    Notification {
+        id PK
+        user_id FK <|--|{ User : 1:N
+        type ENUM("SMS", "email", "push") NOT NULL
+        content text NOT NULL
+        status ENUM("pending", "sent", "failed") NOT NULL DEFAULT "pending"
+        sent_at timestamp
+    }
